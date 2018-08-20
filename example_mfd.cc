@@ -13,6 +13,9 @@ const double button_spacing = 1.4;
 const double button_size = 0.9;
 const double button_spacer_margin = 0.2;
 const double button_spacer_r = 0.05;
+const double corner_indent_size = 1.1;
+const double corner_indent_depth = 0.4;
+const double corner_indent_r = 0.5;
 
 
 void cgmain()
@@ -80,11 +83,28 @@ void cgmain()
 			}
 		};
 
+		auto corner_indent = []{
+			auto mk_indent = []{
+				const double extend = 1;
+				translate(-extend,-extend,depth-corner_indent_depth) z_rounded_box(
+					corner_indent_size + extend,
+					corner_indent_size + extend,
+					corner_indent_depth + extend,
+					corner_indent_r
+				);
+			};
+			mk_indent();
+			translate(side,0) rotate(90_Z) mk_indent();
+			translate(0,side) rotate(-90_Z) mk_indent();
+			translate(side,side) rotate(180_Z) mk_indent();
+		};
+
 		translate(-side/2, -side/2) {
 			cut {
 				panel_outline();
 				screen_cut();
 				button_holes();
+				corner_indent();
 			}
 			button_spacers();
 		}
