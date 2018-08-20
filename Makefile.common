@@ -29,4 +29,4 @@ example_%.obj: example_%
 	./$< --write-obj $<
 
 clean:
-	rm -f *${DYNEXT} ${targets} $(examples:=.mtl)
+	rm -f cg${DYNEXT} ${targets} $(examples:=.mtl)
