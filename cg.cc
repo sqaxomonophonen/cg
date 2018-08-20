@@ -196,20 +196,21 @@ struct node {
 		case FUSE:
 		case COMMON: {
 			if (children.size() == 0) return TopoDS_Shape();
-			if (children.size() == 1) return children[0]->build_shape_rec();
-			TopoDS_Shape a = children[0]->build_shape_rec();
-			TopoDS_Shape b = build_group_shape(1);
-			if (type == CUT) {
-				return BRepAlgoAPI_Cut(a, b);
-			} else if (type == FUSE) {
-				return BRepAlgoAPI_Fuse(a, b);
-			} else if (type == COMMON) {
-				return BRepAlgoAPI_Common(a, b);
-			} else {
-				assert(!"unhandled type");
+			TopoDS_Shape r = children[0]->build_shape_rec();
+			for (int i = 1; i < children.size(); i++) {
+				TopoDS_Shape o = children[i]->build_shape_rec();
+				if (type == CUT) {
+					r = BRepAlgoAPI_Cut(r, o);
+				} else if (type == FUSE) {
+					r = BRepAlgoAPI_Fuse(r, o);
+				} else if (type == COMMON) {
+					r = BRepAlgoAPI_Common(r, o);
+				} else {
+					assert(!"unhandled type");
+				}
 			}
+			return r;
 		}
-
 		}
 
 		assert(!"unhandled type");
