@@ -1,0 +1,26 @@
+-include Makefile.cfg
+
+ifndef OCCT_INC
+$(error OCCT_INC is not defined; please set it to the OpenCASCADE/occt include path in Makefile.cfg)
+endif
+
+ifndef OCCT_LIB
+$(error OCCT_LIB is not defined; please set it to the OpenCASCADE/occt library path in Makefile.cfg)
+endif
+
+ifdef SET_RPATH
+MAYBE_RPATH=-Wl,-rpath,.:${OCCT_LIB}
+endif
+
+OCCT_LINK=-L${OCCT_LIB} -lTKernel -lTKPrim -lTKMesh -lTKBin -lTKMath -lTKGeomBase -lTKG3d -lTKG2d -lTKTopAlgo -lTKBRep -lTKBO -lTKFillet -lTKOffset
+
+all: test
+
+cg${DYNEXT}: cg.cc cg.h
+	clang++ -std=c++11 -Wall -shared -fPIC -I${OCCT_INC} $< -o $@ ${OCCT_LINK}
+
+test: test.cc cg${DYNEXT}
+	clang++ -std=c++11 -Wall $< -o $@ cg${DYNEXT} ${MAYBE_RPATH}
+
+clean:
+	rm -f *${DYNEXT} test

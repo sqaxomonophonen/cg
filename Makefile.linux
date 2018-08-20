@@ -1,0 +1,3 @@
+DYNEXT=.so
+SET_RPATH=1
+include Makefile.common

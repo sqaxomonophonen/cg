@@ -1,0 +1,2 @@
+DYNEXT=.dylib
+include Makefile.common
