@@ -11,6 +11,9 @@ const double screen_depth = 0.5;
 const int n_buttons_per_side = 5;
 const double button_spacing = 1.4;
 const double button_size = 0.9;
+const double button_spacer_margin = 0.2;
+const double button_spacer_r = 0.05;
+
 
 void cgmain()
 {
@@ -60,12 +63,30 @@ void cgmain()
 			);
 		};
 
+		auto button_spacers = []{
+			auto spacer = []{
+				translate(0, button_spacer_margin) rotate(-90_X) {
+					capsule(button_spacer_r, margin - button_spacer_margin*2);
+				}
+			};
+			translate(0,0,depth) {
+				for (int i = 0; i <= n_buttons_per_side; i++) {
+					double d = side/2 + (i - (double)n_buttons_per_side/2) * button_spacing;
+					translate(d) spacer();
+					translate(d, side-margin) spacer();
+					translate(0,d) rotate(-90_Z) spacer();
+					translate(side-margin,d) rotate(-90_Z) spacer();
+				}
+			}
+		};
+
 		translate(-side/2, -side/2) {
 			cut {
 				panel_outline();
 				screen_cut();
 				button_holes();
 			}
+			button_spacers();
 		}
 	}
 }

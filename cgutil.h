@@ -1,5 +1,13 @@
 #ifndef CGUTIL_H
 
+void capsule(double r, double h) {
+	fuse {
+		translate(0,0,r) sphere(r);
+		translate(0,0,r) cylinder(r, h-r*2);
+		translate(0,0,h-r) sphere(r);
+	}
+}
+
 void z_rounded_quad(double sx, double sy, double r) {
 	face {
 		double cc = sin(M_PI/4)*r;
