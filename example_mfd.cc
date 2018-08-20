@@ -1,6 +1,8 @@
 #include "cgmain.h"
 #include "cgutil.h"
 
+const bool is_highpoly = false;
+
 const double side = 15;
 const double depth = 1;
 const double margin = 1.5;
@@ -20,7 +22,10 @@ const double corner_indent_r = 0.5;
 
 void cgmain()
 {
-	mkobj("MFD") {
+	double linear_deflection = is_highpoly ? 0.1 : 2.0;
+	bool is_relative = false;
+	double angular_deflection = is_highpoly ? 0.1 : 2.0;
+	mkobj("MFD", linear_deflection, is_relative, angular_deflection) {
 		auto panel_outline = []{
 			z_rounded_box(side, side, depth, corner_radius);
 		};
@@ -100,13 +105,13 @@ void cgmain()
 		};
 
 		translate(-side/2, -side/2) {
-			cut {
+			fillet(is_highpoly ? 0.05 : 0) cut {
 				panel_outline();
 				screen_cut();
 				button_holes();
 				corner_indent();
 			}
-			button_spacers();
+			if (is_highpoly) button_spacers();
 		}
 	}
 }

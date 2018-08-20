@@ -100,6 +100,9 @@ struct node {
 	union {
 		struct {
 			const char* name;
+			double linear_deflection;
+			bool is_relative;
+			double angular_deflection;
 		} mkobj;
 
 		struct {
@@ -294,13 +297,17 @@ struct node {
 		}
 
 		case FILLET: {
-			TopoDS_Shape r = fuse_all();
-			BRepFilletAPI_MakeFillet mk_fillet(r);
-			for (TopExp_Explorer it(r, TopAbs_EDGE); it.More(); it.Next()) {
-				TopoDS_Edge edge = TopoDS::Edge(it.Current());
-				mk_fillet.Add(fillet.radius, edge);
+			if (fillet.radius > 0) {
+				TopoDS_Shape r = fuse_all();
+				BRepFilletAPI_MakeFillet mk_fillet(r);
+				for (TopExp_Explorer it(r, TopAbs_EDGE); it.More(); it.Next()) {
+					TopoDS_Edge edge = TopoDS::Edge(it.Current());
+					mk_fillet.Add(fillet.radius, edge);
+				}
+				return mk_fillet.Shape();
+			} else {
+				return fuse_all();
 			}
-			return mk_fillet.Shape();
 		}
 
 		case PRISM: return BRepPrimAPI_MakePrism(build_group_shape(), gp_Vec(prism.v.x, prism.v.y, prism.v.z), true);
@@ -346,14 +353,14 @@ struct node {
 		assert(!"unhandled type");
 	}
 
-	mesh* build_mesh(TopoDS_Shape& shp)
+	mesh* build_mesh(TopoDS_Shape& shp, double linear_deflection, bool is_relative, double angular_deflection)
 	{
 		mesh* m = new mesh;
 
 		/* TODO the parameters should come from mkobj().. also, I might
 		 * want two sets ... one for low poly and one for high poly?
 		 * depends on whether I need high poly or not... */
-		BRepMesh_IncrementalMesh(shp, 1, false, 0.5);
+		BRepMesh_IncrementalMesh(shp, linear_deflection, is_relative, angular_deflection);
 
 		std::map<v3,int,v3_less> vertex_map;
 		int n_duplicate_vertices = 0;
@@ -434,7 +441,7 @@ struct node {
 		TopoDS_Shape shp = build_shape_rec();
 
 		if (run_write_obj) {
-			mesh* mesh = build_mesh(shp);
+			mesh* mesh = build_mesh(shp, mkobj.linear_deflection, mkobj.is_relative, mkobj.angular_deflection);
 
 			auto str_concat = [](const char* s1, const char* s2) -> char* {
 				char* result = (char*) malloc(strlen(s1)+strlen(s2)+1);
@@ -533,13 +540,16 @@ static void leave_node()
 	node_stack.pop_back();
 }
 
-void _grp_mkobj(const char* name)
+void _grp_mkobj(const char* name, double linear_deflection, bool is_relative, double angular_deflection)
 {
 	if (tree_root != NULL) {
 		assert(!"mkobj() cannot be nested");
 	}
 	tree_root = new node(MKOBJ);
 	tree_root->mkobj.name = name;
+	tree_root->mkobj.linear_deflection = linear_deflection;
+	tree_root->mkobj.is_relative = is_relative;
+	tree_root->mkobj.angular_deflection = angular_deflection;
 	node_stack.push_back(tree_root);
 }
 

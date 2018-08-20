@@ -72,7 +72,7 @@ int _grp1();
 #define _GRP1 ,_grp0();_grp1();)
 
 #define mkobj(...)     _GRP0 _grp_mkobj(__VA_ARGS__)     _GRP1
-void _grp_mkobj(const char* name);
+void _grp_mkobj(const char* name, double linear_deflection=2.0, bool is_relative=false, double angular_deflection=0.5);
 
 void box(const v3& size);
 void box(double sx=1, double sy=1, double sz=1);
