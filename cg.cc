@@ -20,6 +20,7 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <TopExp_Explorer.hxx>
+#include <Poly.hxx>
 
 #include "cg.h"
 
@@ -27,6 +28,20 @@ struct node;
 
 node* tree_root = NULL;
 std::vector<node*> node_stack;
+
+
+struct triangle {
+	int v0,v1,v2,n;
+};
+
+struct mesh {
+	std::vector<v3> vertices;
+	std::vector<v3> normals;
+	std::vector<triangle> triangles;
+};
+
+char* run_write_obj = NULL;
+bool run_dump_tree = false;
 
 enum node_type {
 	MKOBJ = 1,
@@ -41,16 +56,19 @@ enum node_type {
 	CYLINDER,
 };
 
-struct gp_Pnt_less {
-	bool operator()(const gp_Pnt& a, const gp_Pnt& b) const  {
-		double dx = a.X() - b.X();
-		double dy = a.Y() - b.Y();
-		double dz = a.Z() - b.Z();
-		if (dx != 0) return dx < 0;
-		if (dy != 0) return dy < 0;
-		return dz < 0;
+struct v3_less {
+	bool operator()(const v3& a, const v3& b) const  {
+		v3 d = a-b;
+		if (d.x != 0) return d.x < 0;
+		if (d.y != 0) return d.y < 0;
+		return d.z < 0;
 	}
 };
+
+static v3 gp_Pnt_to_v3(const gp_Pnt& p)
+{
+	return v3(p.X(), p.Y(), p.Z());
+}
 
 struct node {
 	enum node_type type;
@@ -103,14 +121,10 @@ struct node {
 		assert(!"unhandled type");
 	}
 
-	void _tab(int depth)
-	{
-		for (int i = 0; i < depth; i++) printf("   ");
-	}
-
 	void dump_rec(int depth = 0)
 	{
-		_tab(depth);
+		auto tab = [](int depth){ for (int i = 0; i < depth; i++) printf("   "); };
+		tab(depth);
 
 		switch (type) {
 		case MKOBJ: printf("mkobj(\"%s\")", mkobj.name); break;
@@ -132,7 +146,7 @@ struct node {
 			for (auto it = children.begin(); it != children.end(); it++) {
 				(*it)->dump_rec(depth+1);
 			}
-			_tab(depth); printf("}\n");
+			tab(depth); printf("}\n");
 		}
 	}
 
@@ -201,22 +215,16 @@ struct node {
 		assert(!"unhandled type");
 	}
 
-	void leave_mkobj()
+	mesh* build_mesh(TopoDS_Shape& shp)
 	{
-		assert(type == MKOBJ);
-		dump_rec();
-
-		TopoDS_Shape shp = build_shape_rec();
-
-		tree_root = NULL;
+		mesh* m = new mesh;
 
 		/* TODO the parameters should come from mkobj().. also, I might
 		 * want two sets ... one for low poly and one for high poly?
 		 * depends on whether I need high poly or not... */
 		BRepMesh_IncrementalMesh(shp, 1, false, 0.5);
 
-		std::map<gp_Pnt,int,gp_Pnt_less> vertex_map;
-		std::vector<gp_Pnt> vertices;
+		std::map<v3,int,v3_less> vertex_map;
 		int n_duplicate_vertices = 0;
 
 		int offset = 0;
@@ -231,41 +239,124 @@ struct node {
 			const Poly_Array1OfTriangle& triangles = pt->Triangles();
 
 			for (int i = 0; i < vertex_nodes.Length(); i++) {
-				gp_Pnt point = vertex_nodes(i+1).Transformed(location);
+				v3 point = gp_Pnt_to_v3(vertex_nodes(i+1).Transformed(location));
 				if (!vertex_map.count(point)) {
-					printf("POINT %zd %f %f %f\n", vertices.size(), point.X(), point.Y(), point.Z());
-					vertex_map[point] = vertices.size();
-					vertices.push_back(point);
+					vertex_map[point] = m->vertices.size();
+					m->vertices.push_back(point);
 				} else {
 					n_duplicate_vertices++;
 				}
 			}
 
+			std::map<v3,int,v3_less> normal_map;
+
 			int n = pt->NbTriangles();
 			for (int i = 0; i < n; i++) {
-				Standard_Integer vni1, vni2, vni3;
-				triangles(i+1).Get(vni1, vni2, vni3);
+				Standard_Integer vni0, vni1, vni2;
+				triangles(i+1).Get(vni0, vni1, vni2);
 
-				const gp_Pnt& p1 = vertex_nodes(vni1);
-				const gp_Pnt& p2 = vertex_nodes(vni2);
-				const gp_Pnt& p3 = vertex_nodes(vni3);
+				const v3& p0 = gp_Pnt_to_v3(vertex_nodes(vni0));
+				const v3& p1 = gp_Pnt_to_v3(vertex_nodes(vni1));
+				const v3& p2 = gp_Pnt_to_v3(vertex_nodes(vni2));
 
+				int vi0 = vertex_map[p0];
 				int vi1 = vertex_map[p1];
 				int vi2 = vertex_map[p2];
-				int vi3 = vertex_map[p3];
 
+				triangle tri;
 				if (face_orientation == TopAbs_Orientation::TopAbs_FORWARD) {
-					printf("TRI %d %d %d\n", vi1, vi2, vi3);
+					tri.v0 = vi0;
+					tri.v1 = vi1;
+					tri.v2 = vi2;
 				} else {
-					printf("TRI %d %d %d\n", vi3, vi2, vi1);
+					tri.v2 = vi0;
+					tri.v1 = vi1;
+					tri.v0 = vi2;
 				}
-			}
 
-			printf("n_vertices: %zd\n", vertices.size());
-			printf("n_duplicate_vertices: %d\n", n_duplicate_vertices);
+				const v3& normal = ((p1-p0).cross(p2-p0)).unit();
+
+				if (normal_map.count(normal) == 0) {
+					normal_map[normal] = m->normals.size();
+					m->normals.push_back(normal);
+				}
+
+				tri.n = normal_map[normal];
+
+				m->triangles.push_back(tri);
+			}
 
 			offset += vertex_nodes.Length();
 		}
+		return m;
+	}
+
+	void leave_mkobj()
+	{
+		assert(type == MKOBJ);
+
+		if (run_dump_tree) dump_rec();
+
+		TopoDS_Shape shp = build_shape_rec();
+
+		if (run_write_obj) {
+			mesh* mesh = build_mesh(shp);
+
+			auto str_concat = [](const char* s1, const char* s2) -> char* {
+				char* result = (char*) malloc(strlen(s1)+strlen(s2)+1);
+				assert(result != NULL);
+				strcpy(result, s1);
+				strcat(result, s2);
+				return result;
+			};
+
+			auto fopen_for_write = [](char* path) -> FILE* {
+				FILE* f = fopen(path, "wb");
+				if (f == NULL) {
+					fprintf(stderr, "could not open %s: %s\n", path, strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+				return f;
+			};
+
+			char* filename_obj = str_concat(run_write_obj, ".obj");
+			char* filename_mtl = str_concat(run_write_obj, ".mtl");
+
+			FILE* file_obj = fopen_for_write(filename_obj);
+			FILE* file_mtl = fopen_for_write(filename_mtl);
+
+			/* write .obj */
+			fprintf(file_obj, "mtllib %s\n", filename_mtl);
+			fprintf(file_obj, "o %s\n", tree_root->mkobj.name);
+			for (auto it = mesh->vertices.begin(); it != mesh->vertices.end(); it++) {
+				const v3 p = (*it);
+				fprintf(file_obj, "v %.6f %.6f %.6f\n", p.x, p.y, p.z);
+			}
+			for (auto it = mesh->normals.begin(); it != mesh->normals.end(); it++) {
+				const v3 n = (*it);
+				fprintf(file_obj, "vn %.6f %.6f %.6f\n", n.x, n.y, n.z);
+			}
+			fprintf(file_obj, "usemtl Mat\n");
+			fprintf(file_obj, "s off\n");
+			for (auto it = mesh->triangles.begin(); it != mesh->triangles.end(); it++) {
+				const triangle t = (*it);
+				fprintf(file_obj, "f %d//%d %d//%d %d//%d\n", t.v0+1, t.n+1, t.v1+1, t.n+1, t.v2+1, t.n+1);
+			}
+
+			/* write .mtl */
+			fprintf(file_mtl, "newmtl Mat\n");
+			fprintf(file_mtl, "Ns 0\n");
+			fprintf(file_mtl, "Ka 0.000000 0.000000 0.000000\n");
+			fprintf(file_mtl, "Kd 0.8 0.8 0.8\n");
+			fprintf(file_mtl, "Ks 0.8 0.8 0.8\n");
+			fprintf(file_mtl, "d 1\n");
+			fprintf(file_mtl, "illum 2\n");
+
+			fclose(file_mtl);
+			fclose(file_obj);
+		}
+
+		tree_root = NULL;
 	}
 
 	void leave() {
@@ -400,7 +491,43 @@ int _grp1()
 	}
 }
 
-int init_main(int argc, char** argv)
+void init_main(int argc, char** argv)
 {
-	return 0;
+	if (argc < 2) {
+		fprintf(stderr, "usage: %s <opts...>\n", argv[0]);
+		fprintf(stderr, "  --write-obj <name>   writes Wavefront OBJ to <name>.obj and <name>.mtl\n");
+		fprintf(stderr, "  --dump-tree          dumps node tree to stdout\n");
+		exit(EXIT_FAILURE);
+	}
+
+	char* store_for = NULL;
+	char** store_arg = NULL;
+
+	for (int i = 1; i < argc; i++) {
+		char* arg = argv[i];
+		if (store_arg) {
+			if (arg[0] == '-') {
+				fprintf(stderr, "missing argument for %s\n", store_for);
+				exit(EXIT_FAILURE);
+			}
+			*store_arg = arg;
+			store_for = NULL;
+			store_arg = NULL;
+		} else {
+			if (strcmp(arg, "--write-obj") == 0) {
+				store_for = arg;
+				store_arg = &run_write_obj;
+			} else if (strcmp(arg, "--dump-tree") == 0) {
+				run_dump_tree = true;
+			} else {
+				fprintf(stderr, "invalid arg: %s\n", arg);
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+
+	if (store_for) {
+		fprintf(stderr, "missing argument for %s\n", store_for);
+		exit(EXIT_FAILURE);
+	}
 }

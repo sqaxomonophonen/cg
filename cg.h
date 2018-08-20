@@ -12,6 +12,20 @@ struct v3 {
 
 	v3 operator - () const { return v3(-x,-y,-z); }
 	v3 operator + () const { return *this; }
+
+	v3 operator - (const v3& other) const {
+		v3 r;
+		for (int i = 0; i < 3; i++) r.s[i] = s[i] - other.s[i];
+		return r;
+	}
+
+	v3 operator + (const v3& other) const {
+		v3 r;
+		for (int i = 0; i < 3; i++) r.s[i] = s[i] + other.s[i];
+		return r;
+	}
+
+
 	v3 operator * (double scalar) const {
 		v3 r;
 		for (int i = 0; i < 3; i++) r.s[i] = s[i] * scalar;
@@ -29,6 +43,14 @@ struct v3 {
 	}
 	double length() const { return sqrt(this->dot(*this)); }
 	v3 unit() const { return *this / length(); }
+
+	v3 cross(const v3& other) const {
+		v3 r;
+		r.x = y*other.z - z*other.y;
+		r.y = z*other.x - x*other.z;
+		r.z = x*other.y - y*other.x;
+		return r;
+	}
 };
 
 v3 x_axis(double x=1) { return v3(x,0,0); }
