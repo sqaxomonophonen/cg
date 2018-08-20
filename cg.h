@@ -76,8 +76,10 @@ void _grp_mkobj(const char* name);
 
 void box(const v3& size);
 void box(double sx=1, double sy=1, double sz=1);
+void wedge(double sx=1, double sy=1, double sz=1, double ltx=1);
 void sphere(double radius=1);
 void cylinder(double radius=1, double height=1);
+void cone(double r0=1, double r1=0.5, double height=1);
 
 #define translate(...) _GRP0 _grp_translate(__VA_ARGS__) _GRP1
 void _grp_translate(const v3& v);

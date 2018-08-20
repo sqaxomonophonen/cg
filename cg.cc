@@ -15,7 +15,9 @@
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeWedge.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRep_Builder.hxx>
@@ -60,8 +62,10 @@ enum node_type {
 	FUSE,
 	FILLET,
 	BOX,
+	WEDGE,
 	SPHERE,
 	CYLINDER,
+	CONE,
 
 	FACE,
 	MOVE_TO,
@@ -116,12 +120,21 @@ struct node {
 		} box;
 
 		struct {
+			v3 size;
+			double ltx;
+		} wedge;
+
+		struct {
 			double radius;
 		} sphere;
 
 		struct {
 			double radius, height;
 		} cylinder;
+
+		struct {
+			double r0, r1, height;
+		} cone;
 
 		struct {
 			v3 v;
@@ -156,8 +169,10 @@ struct node {
 		case FACE:
 			return false;
 		case BOX:
+		case WEDGE:
 		case SPHERE:
 		case CYLINDER:
+		case CONE:
 		case MOVE_TO:
 		case LINE_TO:
 		case CIRCLE_ARC_TO:
@@ -183,8 +198,10 @@ struct node {
 		case PRISM: printf("prism(v={%f,%f,%f})", prism.v.x, prism.v.y, prism.v.z); break;
 		case FACE: printf("face"); break;
 		case BOX: printf("box(%f,%f,%f)", box.size.x, box.size.y, box.size.z); break;
+		case WEDGE: printf("wedge(%f,%f,%f,%f)", wedge.size.x, wedge.size.y, wedge.size.z, wedge.ltx); break;
 		case SPHERE: printf("sphere(%f)", sphere.radius); break;
 		case CYLINDER: printf("cylinder(r=%f,h=%f)", cylinder.radius, cylinder.height); break;
+		case CONE: printf("cone(r0=%f,r1=%f,h=%f)", cone.r0, cone.r1, cone.height); break;
 		case MOVE_TO: printf("move_to(p={%f,%f,%f})", move_to.p.x, move_to.p.y, move_to.p.z); break;
 		case LINE_TO: printf("line_to(p={%f,%f,%f})", line_to.p.x, line_to.p.y, line_to.p.z); break;
 		case CIRCLE_ARC_TO: printf("circle_arc_to(via={%f,%f,%f} p={%f,%f,%f})", circle_arc_to.via.x, circle_arc_to.via.y, circle_arc_to.via.z, circle_arc_to.p.x, circle_arc_to.p.y, circle_arc_to.p.z); break;
@@ -251,7 +268,9 @@ struct node {
 		}
 
 		case BOX: return BRepPrimAPI_MakeBox(box.size.x, box.size.y, box.size.z);
+		case WEDGE: return BRepPrimAPI_MakeWedge(wedge.size.x, wedge.size.y, wedge.size.z, wedge.ltx);
 		case CYLINDER: return BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(), gp::DZ()), cylinder.radius, cylinder.height);
+		case CONE: return BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(), gp::DZ()), cone.r0, cone.r1, cone.height);
 		case SPHERE: return BRepPrimAPI_MakeSphere(sphere.radius);
 
 		case CUT:
@@ -632,6 +651,14 @@ void box(double sx, double sy, double sz)
 	box(v3(sx,sy,sz));
 }
 
+void wedge(double sx, double sy, double sz, double ltx)
+{
+	node* n = new node(WEDGE);
+	n->wedge.size = v3(sx,sy,sz);
+	n->wedge.ltx = ltx;
+	push_node(n);
+}
+
 void sphere(double radius)
 {
 	node* n = new node(SPHERE);
@@ -646,6 +673,16 @@ void cylinder(double radius, double height)
 	n->cylinder.height = height;
 	push_node(n);
 }
+
+void cone(double r0, double r1, double height)
+{
+	node* n = new node(CONE);
+	n->cone.r0 = r0;
+	n->cone.r1 = r1;
+	n->cone.height = height;
+	push_node(n);
+}
+
 
 int _HX_BEGIN = 0;
 void _grp0()
