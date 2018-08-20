@@ -188,7 +188,7 @@ struct node {
 			return build_transform(tx);
 		}
 
-		case BOX: return BRepPrimAPI_MakeBox(box.size.x, box.size.y, box.size.y);
+		case BOX: return BRepPrimAPI_MakeBox(box.size.x, box.size.y, box.size.z);
 		case CYLINDER: return BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(), gp::DZ()), cylinder.radius, cylinder.height);
 		case SPHERE: return BRepPrimAPI_MakeSphere(sphere.radius);
 
