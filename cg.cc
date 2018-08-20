@@ -2,10 +2,13 @@
 #include <assert.h>
 
 #include <vector>
+#include <map>
 
 // OpenCASCADE
+#include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopoDS_Face.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <gp_Ax1.hxx>
@@ -15,6 +18,8 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <TopExp_Explorer.hxx>
 
 #include "cg.h"
 
@@ -34,6 +39,17 @@ enum node_type {
 	BOX,
 	SPHERE,
 	CYLINDER,
+};
+
+struct gp_Pnt_less {
+	bool operator()(const gp_Pnt& a, const gp_Pnt& b) const  {
+		double dx = a.X() - b.X();
+		double dy = a.Y() - b.Y();
+		double dz = a.Z() - b.Z();
+		if (dx != 0) return dx < 0;
+		if (dy != 0) return dy < 0;
+		return dz < 0;
+	}
 };
 
 struct node {
@@ -190,11 +206,66 @@ struct node {
 		assert(type == MKOBJ);
 		dump_rec();
 
-		// BRepBuilderAPI_GTransform til at lave en transform...
-
-		build_shape_rec();
+		TopoDS_Shape shp = build_shape_rec();
 
 		tree_root = NULL;
+
+		/* TODO the parameters should come from mkobj().. also, I might
+		 * want two sets ... one for low poly and one for high poly?
+		 * depends on whether I need high poly or not... */
+		BRepMesh_IncrementalMesh(shp, 1, false, 0.5);
+
+		std::map<gp_Pnt,int,gp_Pnt_less> vertex_map;
+		std::vector<gp_Pnt> vertices;
+		int n_duplicate_vertices = 0;
+
+		int offset = 0;
+		for (TopExp_Explorer it(shp, TopAbs_FACE); it.More(); it.Next()) {
+			TopoDS_Face fac = TopoDS::Face(it.Current());
+			TopAbs_Orientation face_orientation = fac.Orientation();
+			TopLoc_Location location;
+			Handle(Poly_Triangulation) pt = BRep_Tool::Triangulation(fac, location);
+			if (pt.IsNull()) continue;
+
+			const TColgp_Array1OfPnt& vertex_nodes = pt->Nodes();
+			const Poly_Array1OfTriangle& triangles = pt->Triangles();
+
+			for (int i = 0; i < vertex_nodes.Length(); i++) {
+				gp_Pnt point = vertex_nodes(i+1).Transformed(location);
+				if (!vertex_map.count(point)) {
+					printf("POINT %zd %f %f %f\n", vertices.size(), point.X(), point.Y(), point.Z());
+					vertex_map[point] = vertices.size();
+					vertices.push_back(point);
+				} else {
+					n_duplicate_vertices++;
+				}
+			}
+
+			int n = pt->NbTriangles();
+			for (int i = 0; i < n; i++) {
+				Standard_Integer vni1, vni2, vni3;
+				triangles(i+1).Get(vni1, vni2, vni3);
+
+				const gp_Pnt& p1 = vertex_nodes(vni1);
+				const gp_Pnt& p2 = vertex_nodes(vni2);
+				const gp_Pnt& p3 = vertex_nodes(vni3);
+
+				int vi1 = vertex_map[p1];
+				int vi2 = vertex_map[p2];
+				int vi3 = vertex_map[p3];
+
+				if (face_orientation == TopAbs_Orientation::TopAbs_FORWARD) {
+					printf("TRI %d %d %d\n", vi1, vi2, vi3);
+				} else {
+					printf("TRI %d %d %d\n", vi3, vi2, vi1);
+				}
+			}
+
+			printf("n_vertices: %zd\n", vertices.size());
+			printf("n_duplicate_vertices: %d\n", n_duplicate_vertices);
+
+			offset += vertex_nodes.Length();
+		}
 	}
 
 	void leave() {
@@ -312,11 +383,6 @@ void cylinder(double radius, double height)
 	push_node(n);
 }
 
-int init_main(int argc, char** argv)
-{
-	return 0;
-}
-
 int _HX_BEGIN = 0;
 void _grp0()
 {
@@ -332,4 +398,9 @@ int _grp1()
 		leave_node();
 		return 0;
 	}
+}
+
+int init_main(int argc, char** argv)
+{
+	return 0;
 }
