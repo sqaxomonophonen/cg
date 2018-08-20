@@ -325,15 +325,22 @@ struct node {
 			FILE* file_obj = fopen_for_write(filename_obj);
 			FILE* file_mtl = fopen_for_write(filename_mtl);
 
+			/* seems Y is up in Wavefront OBJ, so Blender actually
+			 * swizzles the input coordinates; guess I have to
+			 * unswizzle them then! */
+			auto wavefront_obj_v3_swizzle = [](const v3& v) -> v3 {
+				return v3(v.x, v.z, -v.y);
+			};
+
 			/* write .obj */
 			fprintf(file_obj, "mtllib %s\n", filename_mtl);
 			fprintf(file_obj, "o %s\n", tree_root->mkobj.name);
 			for (auto it = mesh->vertices.begin(); it != mesh->vertices.end(); it++) {
-				const v3 p = (*it);
+				const v3 p = wavefront_obj_v3_swizzle(*it);
 				fprintf(file_obj, "v %.6f %.6f %.6f\n", p.x, p.y, p.z);
 			}
 			for (auto it = mesh->normals.begin(); it != mesh->normals.end(); it++) {
-				const v3 n = (*it);
+				const v3 n = wavefront_obj_v3_swizzle(*it);
 				fprintf(file_obj, "vn %.6f %.6f %.6f\n", n.x, n.y, n.z);
 			}
 			fprintf(file_obj, "usemtl Mat\n");
