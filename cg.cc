@@ -21,6 +21,7 @@
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <TopExp_Explorer.hxx>
 #include <Poly.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 
 #include "cg.h"
 
@@ -51,6 +52,7 @@ enum node_type {
 	CUT,
 	COMMON,
 	FUSE,
+	FILLET,
 	BOX,
 	SPHERE,
 	CYLINDER,
@@ -89,6 +91,10 @@ struct node {
 		} rotate;
 
 		struct {
+			double radius;
+		} fillet;
+
+		struct {
 			v3 size;
 		} box;
 
@@ -112,6 +118,7 @@ struct node {
 		case CUT:
 		case COMMON:
 		case FUSE:
+		case FILLET:
 			return false;
 		case BOX:
 		case SPHERE:
@@ -134,6 +141,7 @@ struct node {
 		case CUT: printf("cut"); break;
 		case COMMON: printf("common"); break;
 		case FUSE: printf("fuse"); break;
+		case FILLET: printf("fillet(radius=%f)", fillet.radius); break;
 		case BOX: printf("box(%f,%f,%f)", box.size.x, box.size.y, box.size.z); break;
 		case SPHERE: printf("sphere(%f)", sphere.radius); break;
 		case CYLINDER: printf("cylinder(r=%f,h=%f)", cylinder.radius, cylinder.height); break;
@@ -164,6 +172,16 @@ struct node {
 	TopoDS_Shape build_transform(gp_Trsf tx)
 	{
 		return BRepBuilderAPI_Transform(build_group_shape(), tx, true).Shape();
+	}
+
+	TopoDS_Shape fuse_all()
+	{
+		if (children.size() == 0) return TopoDS_Shape();
+		TopoDS_Shape r = children[0]->build_shape_rec();
+		for (int i = 1; i < children.size(); i++) {
+			r = BRepAlgoAPI_Fuse(r, children[i]->build_shape_rec());
+		}
+		return r;
 	}
 
 	TopoDS_Shape build_shape_rec()
@@ -211,6 +229,17 @@ struct node {
 			}
 			return r;
 		}
+
+		case FILLET: {
+			TopoDS_Shape r = fuse_all();
+			BRepFilletAPI_MakeFillet mk_fillet(r);
+			for (TopExp_Explorer it(r, TopAbs_EDGE); it.More(); it.Next()) {
+				TopoDS_Edge edge = TopoDS::Edge(it.Current());
+				mk_fillet.Add(fillet.radius, edge);
+			}
+			return mk_fillet.Shape();
+		}
+
 		}
 
 		assert(!"unhandled type");
@@ -453,6 +482,13 @@ void _grp_fuse()
 void _grp_common()
 {
 	enter_node(new node(COMMON));
+}
+
+void _grp_fillet(double radius)
+{
+	node* n = new node(FILLET);
+	n->fillet.radius = radius;
+	enter_node(n);
 }
 
 void box(const v3& size)
