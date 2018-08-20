@@ -294,17 +294,20 @@ struct node {
 				int vi2 = vertex_map[p2];
 
 				triangle tri;
+				bool flip_normal;
 				if (face_orientation == TopAbs_Orientation::TopAbs_FORWARD) {
 					tri.v0 = vi0;
 					tri.v1 = vi1;
 					tri.v2 = vi2;
+					flip_normal = false;
 				} else {
 					tri.v2 = vi0;
 					tri.v1 = vi1;
 					tri.v0 = vi2;
+					flip_normal = true;
 				}
 
-				const v3& normal = ((p1-p0).cross(p2-p0)).unit();
+				const v3& normal = ((p1-p0).cross(p2-p0)).unit() * (flip_normal ? -1.0 : 1.0);
 
 				if (normal_map.count(normal) == 0) {
 					normal_map[normal] = m->normals.size();
