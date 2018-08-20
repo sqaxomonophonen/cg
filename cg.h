@@ -105,10 +105,10 @@ void _grp_fillet(double radius);
 #define face           _GRP0 _grp_face()                 _GRP1
 void _grp_face();
 
-void move_to(double x=0, double y=0, double z=0);
 void move_to(const v3& p);
-void line_to(double x=0, double y=0, double z=0);
+void move_to(double x=0, double y=0, double z=0);
 void line_to(const v3& p);
+void line_to(double x=0, double y=0, double z=0);
 void circle_arc_to(const v3& point_on_circle, const v3& end_point);
 // TODO OpenCASCADE has all the conic sections: circle, ellipse, parabola, hyperbola
 

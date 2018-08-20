@@ -5,23 +5,29 @@
 #include <map>
 
 // OpenCASCADE
-#include <TopoDS.hxx>
-#include <TopoDS_Shape.hxx>
-#include <TopoDS_Compound.hxx>
-#include <TopoDS_Face.hxx>
-#include <BRep_Builder.hxx>
-#include <BRepBuilderAPI_Transform.hxx>
-#include <gp_Ax1.hxx>
-#include <BRepPrimAPI_MakeBox.hxx>
-#include <BRepPrimAPI_MakeCylinder.hxx>
-#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
-#include <BRepAlgoAPI_Common.hxx>
-#include <BRepMesh_IncrementalMesh.hxx>
-#include <TopExp_Explorer.hxx>
-#include <Poly.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRep_Builder.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeSegment.hxx>
+#include <Poly.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopoDS_Shape.hxx>
+#include <gp_Ax1.hxx>
 
 #include "cg.h"
 
@@ -56,6 +62,12 @@ enum node_type {
 	BOX,
 	SPHERE,
 	CYLINDER,
+
+	FACE,
+	MOVE_TO,
+	LINE_TO,
+	CIRCLE_ARC_TO,
+	PRISM,
 };
 
 struct v3_less {
@@ -70,6 +82,11 @@ struct v3_less {
 static v3 gp_Pnt_to_v3(const gp_Pnt& p)
 {
 	return v3(p.X(), p.Y(), p.Z());
+}
+
+static gp_Pnt v3_to_gp_Pnt(const v3& v)
+{
+	return gp_Pnt(v.x, v.y, v.z);
 }
 
 struct node {
@@ -105,6 +122,22 @@ struct node {
 		struct {
 			double radius, height;
 		} cylinder;
+
+		struct {
+			v3 v;
+		} prism;
+
+		struct {
+			v3 p;
+		} move_to;
+
+		struct {
+			v3 p;
+		} line_to;
+
+		struct {
+			v3 via, p;
+		} circle_arc_to;
 	};
 
 	node(enum node_type type) : type(type) {}
@@ -119,10 +152,15 @@ struct node {
 		case COMMON:
 		case FUSE:
 		case FILLET:
+		case PRISM:
+		case FACE:
 			return false;
 		case BOX:
 		case SPHERE:
 		case CYLINDER:
+		case MOVE_TO:
+		case LINE_TO:
+		case CIRCLE_ARC_TO:
 			return true;
 		}
 		assert(!"unhandled type");
@@ -142,9 +180,15 @@ struct node {
 		case COMMON: printf("common"); break;
 		case FUSE: printf("fuse"); break;
 		case FILLET: printf("fillet(radius=%f)", fillet.radius); break;
+		case PRISM: printf("prism(v={%f,%f,%f})", prism.v.x, prism.v.y, prism.v.z); break;
+		case FACE: printf("face"); break;
 		case BOX: printf("box(%f,%f,%f)", box.size.x, box.size.y, box.size.z); break;
 		case SPHERE: printf("sphere(%f)", sphere.radius); break;
 		case CYLINDER: printf("cylinder(r=%f,h=%f)", cylinder.radius, cylinder.height); break;
+		case MOVE_TO: printf("move_to(p={%f,%f,%f})", move_to.p.x, move_to.p.y, move_to.p.z); break;
+		case LINE_TO: printf("line_to(p={%f,%f,%f})", line_to.p.x, line_to.p.y, line_to.p.z); break;
+		case CIRCLE_ARC_TO: printf("circle_arc_to(via={%f,%f,%f} p={%f,%f,%f})", circle_arc_to.via.x, circle_arc_to.via.y, circle_arc_to.via.z, circle_arc_to.p.x, circle_arc_to.p.y, circle_arc_to.p.z); break;
+
 		}
 
 		if (is_leaf()) {
@@ -239,6 +283,44 @@ struct node {
 			}
 			return mk_fillet.Shape();
 		}
+
+		case PRISM: return BRepPrimAPI_MakePrism(build_group_shape(), gp_Vec(prism.v.x, prism.v.y, prism.v.z), true);
+
+		case FACE: {
+			gp_Pnt cursor;
+			BRepBuilderAPI_MakeWire mk_wire;
+			for (int i = 0; i < children.size(); i++) {
+				node* c = children[i];
+				switch (c->type) {
+				case MOVE_TO:
+					cursor = v3_to_gp_Pnt(c->move_to.p);
+					break;
+				case LINE_TO: {
+					gp_Pnt p = v3_to_gp_Pnt(c->line_to.p);
+					Handle(Geom_TrimmedCurve) tc = GC_MakeSegment(cursor, p);
+					mk_wire.Add(BRepBuilderAPI_MakeEdge(tc));
+					cursor = p;
+					} break;
+				case CIRCLE_ARC_TO: {
+					gp_Pnt via = v3_to_gp_Pnt(c->circle_arc_to.via);
+					gp_Pnt p = v3_to_gp_Pnt(c->circle_arc_to.p);
+					Handle(Geom_TrimmedCurve) tc = GC_MakeArcOfCircle(cursor, via, p);
+					mk_wire.Add(BRepBuilderAPI_MakeEdge(tc));
+					cursor = p;
+					} break;
+				default:
+					assert(!"invalid face child; not move_to/line_to/circle_arc_to");
+				}
+			}
+			assert(mk_wire.IsDone());
+			return BRepBuilderAPI_MakeFace(mk_wire.Wire());
+		}
+
+		case MOVE_TO:
+		case LINE_TO:
+		case CIRCLE_ARC_TO:
+			assert(!"invalid move_to/line_to/circle_arc_to; must be inside face{}");
+			break;
 
 		}
 
@@ -492,6 +574,50 @@ void _grp_fillet(double radius)
 	node* n = new node(FILLET);
 	n->fillet.radius = radius;
 	enter_node(n);
+}
+
+void _grp_face()
+{
+	enter_node(new node(FACE));
+}
+
+void _grp_prism(const v3& v)
+{
+	node* n = new node(PRISM);
+	n->prism.v = v;
+	enter_node(n);
+}
+
+void move_to(const v3& p)
+{
+	node* n = new node(MOVE_TO);
+	n->move_to.p = p;
+	push_node(n);
+}
+
+void move_to(double x, double y, double z)
+{
+	move_to(v3(x,y,z));
+}
+
+void line_to(const v3& p)
+{
+	node* n = new node(LINE_TO);
+	n->line_to.p = p;
+	push_node(n);
+}
+
+void line_to(double x, double y, double z)
+{
+	line_to(v3(x,y,z));
+}
+
+void circle_arc_to(const v3& point_on_circle, const v3& end_point)
+{
+	node* n = new node(CIRCLE_ARC_TO);
+	n->circle_arc_to.via = point_on_circle;
+	n->circle_arc_to.p = end_point;
+	push_node(n);
 }
 
 void box(const v3& size)
