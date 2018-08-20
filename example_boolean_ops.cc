@@ -3,26 +3,18 @@
 void cgmain()
 {
 	mkobj("BooleanOps") {
-		auto cylinder_cross = []{
-			translate(-2_Z) cylinder(0.5, 4);
-			rotate(90_X) translate(-2_Z) cylinder(0.5, 4);
-			rotate(90_Y) translate(-2_Z) cylinder(0.5, 4);
+		auto objs = []{
+			translate(-1,-1,-1) box(2,2,2);
+			auto cyl = []{
+				translate(-2_Z) cylinder(0.8, 4);
+			};
+			cyl();
+			rotate(90_X) cyl();
+			rotate(90_Y) cyl();
 		};
 
-		translate(-4) cut {
-			translate(-1,-1,-1) box(2,2,2);
-			cylinder_cross();
-		}
-
-		fuse {
-			translate(-1,-1,-1) box(2,2,2);
-			cylinder_cross();
-		}
-
-		translate(4) common {
-			translate(-1,-1,-1) box(2,2,2);
-			cylinder_cross();
-		}
-
+		translate(-4) cut    objs();
+		              fuse   objs();
+		translate(4)  common objs();
 	}
 }
