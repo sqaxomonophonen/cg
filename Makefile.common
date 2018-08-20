@@ -14,13 +14,19 @@ endif
 
 OCCT_LINK=-L${OCCT_LIB} -lTKernel -lTKPrim -lTKMesh -lTKBin -lTKMath -lTKGeomBase -lTKG3d -lTKG2d -lTKTopAlgo -lTKBRep -lTKBO -lTKFillet -lTKOffset
 
-all: test
+examples=$(basename $(wildcard example_*.cc))
+targets=${examples} ${examples:=.obj}
+
+all: ${targets}
 
 cg${DYNEXT}: cg.cc cg.h
 	clang++ -std=c++11 -Wall -shared -fPIC -I${OCCT_INC} $< -o $@ ${OCCT_LINK}
 
-test: test.cc cg${DYNEXT}
+example_%: example_%.cc cg${DYNEXT}
 	clang++ -std=c++11 -Wall $< -o $@ cg${DYNEXT} ${MAYBE_RPATH}
 
+example_%.obj: example_%
+	./$< --write-obj $<
+
 clean:
-	rm -f *${DYNEXT} test
+	rm -f *${DYNEXT} ${targets} $(examples:=.mtl)
