@@ -84,6 +84,8 @@ void cone(double r0=1, double r1=0.5, double height=1);
 void cullbox(const v3& size);
 void cullbox(double sx=1, double sy=1, double sz=1);
 
+void marker(const char* name);
+
 #define translate(...) _GRP0 _grp_translate(__VA_ARGS__) _GRP1
 void _grp_translate(const v3& v);
 void _grp_translate(double x=0, double y=0, double z=0);

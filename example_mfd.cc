@@ -47,6 +47,7 @@ void cgmain()
 				double d = side/2 + (i - (double)n_buttons_per_side/2 + 0.5) * button_spacing;
 				auto std_button_hole = [&]() {
 					button_hole(button_size, button_size);
+					marker("std_buttons");
 				};
 				translate(d,margin/2) std_button_hole();
 				translate(d,side-margin/2) std_button_hole();
@@ -57,7 +58,10 @@ void cgmain()
 			auto xx_button = [&](double x0, double x1) {
 				double sx = x1-x0;
 				double dx = x0+sx/2;
-				translate(dx,margin/2) button_hole(sx, button_size);
+				translate(dx,margin/2) {
+					button_hole(sx, button_size);
+					marker("xx_buttons");
+				}
 			};
 
 			xx_button(

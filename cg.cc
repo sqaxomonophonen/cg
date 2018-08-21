@@ -65,6 +65,7 @@ struct node;
 node* tree_root = NULL;
 std::vector<node*> node_stack;
 std::vector<gp_Trsf> transform_stack;
+std::map<const char*, std::vector<gp_Trsf>> markers;
 
 struct cull_plane {
 	v3 p,n;
@@ -98,7 +99,7 @@ struct mesh {
 };
 
 char* run_write_obj = NULL;
-bool run_dump_tree = false;
+bool run_dump = false;
 
 enum node_type {
 	MKOBJ = 1,
@@ -139,6 +140,16 @@ static v3 gp_Pnt_to_v3(const gp_Pnt& p)
 static gp_Pnt v3_to_gp_Pnt(const v3& v)
 {
 	return gp_Pnt(v.x, v.y, v.z);
+}
+
+static void dump_gp_Trsf(const gp_Trsf& tx)
+{
+	for (int row = 1; row <= 3; row++) {
+		for (int col = 1; col <= 4; col++) {
+			printf("%.3f ", tx.Value(row, col));
+		}
+		printf("\n");
+	}
 }
 
 struct node {
@@ -517,11 +528,26 @@ struct node {
 		return m;
 	}
 
+	void dump_markers()
+	{
+		for (auto it = markers.begin(); it != markers.end(); it++) {
+			printf("\nmarkers named \"%s\"\n", it->first);
+			auto ms = it->second;
+			for (auto jt = ms.begin(); jt != ms.end(); jt++) {
+				dump_gp_Trsf(*jt);
+				printf("\n");
+			}
+		}
+	}
+
 	void leave_mkobj()
 	{
 		assert(type == MKOBJ);
 
-		if (run_dump_tree) dump_rec();
+		if (run_dump) {
+			dump_rec();
+			dump_markers();
+		}
 
 		TopoDS_Shape shp;
 		{
@@ -810,6 +836,11 @@ void cullbox(double sx, double sy, double sz)
 	cullbox(v3(sx,sy,sz));
 }
 
+void marker(const char* name)
+{
+	markers[name].push_back(get_current_transform());
+}
+
 void wedge(double sx, double sy, double sz, double ltx)
 {
 	node* n = new node(WEDGE);
@@ -865,7 +896,7 @@ void init_main(int argc, char** argv)
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s <opts...>\n", argv[0]);
 		fprintf(stderr, "  --write-obj <name>   writes Wavefront OBJ to <name>.obj and <name>.mtl\n");
-		fprintf(stderr, "  --dump-tree          dumps node tree to stdout\n");
+		fprintf(stderr, "  --dump               dumps info to stdout\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -886,8 +917,8 @@ void init_main(int argc, char** argv)
 			if (strcmp(arg, "--write-obj") == 0) {
 				store_for = arg;
 				store_arg = &run_write_obj;
-			} else if (strcmp(arg, "--dump-tree") == 0) {
-				run_dump_tree = true;
+			} else if (strcmp(arg, "--dump") == 0) {
+				run_dump = true;
 			} else {
 				fprintf(stderr, "invalid arg: %s\n", arg);
 				exit(EXIT_FAILURE);
