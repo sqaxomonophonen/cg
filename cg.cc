@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <map>
+#include <chrono>
 
 // OpenCASCADE
 #include <BRepAlgoAPI_Common.hxx>
@@ -32,6 +33,32 @@
 #include <gp_Ax1.hxx>
 
 #include "cg.h"
+
+struct stopwatch {
+	typedef std::chrono::high_resolution_clock clk;
+	clk::time_point t0;
+
+	void reset() {
+		t0 = clk::now();
+	}
+
+	double time() {
+		return (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(clk::now() - t0)).count() / 1e9;
+	}
+};
+
+struct scope_timer {
+	const char* what;
+	stopwatch sw;
+	scope_timer(const char* what) : what(what) {
+		sw.reset();
+	}
+
+	~scope_timer() {
+		double dt = sw.time();
+		printf("[ %.3fs ] %s\n", dt, what);
+	}
+};
 
 struct node;
 
@@ -355,6 +382,8 @@ struct node {
 
 	mesh* build_mesh(TopoDS_Shape& shp, double linear_deflection, bool is_relative, double angular_deflection)
 	{
+		scope_timer ST("build mesh");
+
 		mesh* m = new mesh;
 
 		/* TODO the parameters should come from mkobj().. also, I might
@@ -438,7 +467,11 @@ struct node {
 
 		if (run_dump_tree) dump_rec();
 
-		TopoDS_Shape shp = build_shape_rec();
+		TopoDS_Shape shp;
+		{
+			scope_timer ST("build shape");
+			shp = build_shape_rec();
+		}
 
 		if (run_write_obj) {
 			mesh* mesh = build_mesh(shp, mkobj.linear_deflection, mkobj.is_relative, mkobj.angular_deflection);
