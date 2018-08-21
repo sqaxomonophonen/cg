@@ -111,6 +111,8 @@ void cgmain()
 				button_holes();
 				corner_indent();
 			}
+			translate(margin/2,margin/2,depth-screen_depth-1) cullbox(side-margin,side-margin,1);
+			translate(-1,-1,-0.9) cullbox(side+2,side+2,1);
 			if (is_highpoly) button_spacers();
 		}
 	}

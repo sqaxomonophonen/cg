@@ -64,7 +64,28 @@ struct node;
 
 node* tree_root = NULL;
 std::vector<node*> node_stack;
+std::vector<gp_Trsf> transform_stack;
 
+struct cull_plane {
+	v3 p,n;
+
+	double sign_dist(const v3& v) const {
+		return (v-p).dot(n);
+	}
+};
+
+struct cull_volume {
+	std::vector<cull_plane> planes;
+
+	bool is_inside(const v3& p) const {
+		for (int i = 0; i < planes.size(); i++) {
+			if (planes[i].sign_dist(p) > 0.0001) return false;
+		}
+		return true;
+	}
+};
+
+std::vector<cull_volume> cull_volumes;
 
 struct triangle {
 	int v0,v1,v2,n;
@@ -275,17 +296,24 @@ struct node {
 		return r;
 	}
 
-	TopoDS_Shape build_shape_rec()
+	bool is_transform()
 	{
 		switch (type) {
-		case MKOBJ:
-		case GROUP:
-			return build_group_shape();
+		case TRANSLATE:
+		case ROTATE:
+			return true;
+		default:
+			return false;
+		}
+	}
 
+	gp_Trsf get_transform()
+	{
+		switch (type) {
 		case TRANSLATE: {
 			gp_Trsf tx;
 			tx.SetTranslation(gp_Vec(translate.v.x, translate.v.y, translate.v.z));
-			return build_transform(tx);
+			return tx;
 		}
 
 		case ROTATE: {
@@ -294,8 +322,24 @@ struct node {
 				gp_Ax1(gp_Pnt(), gp_Dir(rotate.axis.x, rotate.axis.y, rotate.axis.z)),
 				deg2rad(rotate.degrees)
 			);
-			return build_transform(tx);
+			return tx;
 		}
+
+		default:
+			assert(!"not a transform");
+		}
+	}
+
+	TopoDS_Shape build_shape_rec()
+	{
+		switch (type) {
+		case MKOBJ:
+		case GROUP:
+			return build_group_shape();
+
+		case TRANSLATE:
+		case ROTATE:
+			return build_transform(get_transform());
 
 		case BOX: return BRepPrimAPI_MakeBox(box.size.x, box.size.y, box.size.z);
 		case WEDGE: return BRepPrimAPI_MakeWedge(wedge.size.x, wedge.size.y, wedge.size.z, wedge.ltx);
@@ -425,6 +469,18 @@ struct node {
 				const v3& p0 = gp_Pnt_to_v3(vertex_nodes(vni0));
 				const v3& p1 = gp_Pnt_to_v3(vertex_nodes(vni1));
 				const v3& p2 = gp_Pnt_to_v3(vertex_nodes(vni2));
+
+				bool do_cull = false;
+				for (int j = 0; j < cull_volumes.size(); j++) {
+					const cull_volume& vol = cull_volumes[j];
+					if (vol.is_inside(p0) && vol.is_inside(p1) && vol.is_inside(p2)) {
+						do_cull = true;
+						break;
+					}
+				}
+				if (do_cull) {
+					continue;
+				}
 
 				int vi0 = vertex_map[p0];
 				int vi1 = vertex_map[p1];
@@ -562,6 +618,7 @@ static void push_node(node* n)
 
 static void enter_node(node* n)
 {
+	if (n->is_transform()) transform_stack.push_back(n->get_transform());
 	push_node(n);
 	node_stack.push_back(n);
 }
@@ -569,8 +626,19 @@ static void enter_node(node* n)
 static void leave_node()
 {
 	assert(node_stack.size() > 0);
-	node_stack.back()->leave();
+	node* top = node_stack.back();
+	if (top->is_transform()) transform_stack.pop_back();
+	top->leave();
 	node_stack.pop_back();
+}
+
+static gp_Trsf get_current_transform()
+{
+	gp_Trsf tx;
+	for (int i = 0; i < transform_stack.size(); i++) {
+		tx = tx * transform_stack[i];
+	}
+	return tx;
 }
 
 void _grp_mkobj(const char* name, double linear_deflection, bool is_relative, double angular_deflection)
@@ -692,6 +760,54 @@ void box(const v3& size)
 void box(double sx, double sy, double sz)
 {
 	box(v3(sx,sy,sz));
+}
+
+void cullbox(const v3& size)
+{
+	gp_Trsf tx = get_current_transform();
+	v3 vertices[8];
+	int i = 0;
+	for (int z = 0; z < 2; z++) {
+		for (int y = 0; y < 2; y++) {
+			for (int x = 0; x < 2; x++) {
+				gp_Pnt v(
+					x ? size.x : 0,
+					y ? size.y : 0,
+					z ? size.z : 0
+				);
+				v = v.Transformed(tx);
+				vertices[i++] = gp_Pnt_to_v3(v);
+			}
+		}
+	}
+
+	cull_volume vol;
+
+	for (int normal_axis = 0; normal_axis < 3; normal_axis++) {
+		for (int sign = 0; sign < 2; sign++) {
+			v3 ps[3];
+			for (int i = 0; i < 3; i++) {
+				int vertex_index = (sign << normal_axis)
+					+ ((((i+sign*2) >> 1) & 1) << ((normal_axis+1)%3))
+					+ ((((i+1)      >> 1) & 1) << ((normal_axis+2)%3));
+				ps[i] = vertices[vertex_index];
+			}
+
+			const v3& normal = ((ps[1]-ps[0]).cross(ps[2]-ps[0])).unit();
+
+			cull_plane pla;
+			pla.p = ps[0];
+			pla.n = normal;
+			vol.planes.push_back(pla);
+		}
+	}
+
+	cull_volumes.push_back(vol);
+}
+
+void cullbox(double sx, double sy, double sz)
+{
+	cullbox(v3(sx,sy,sz));
 }
 
 void wedge(double sx, double sy, double sz, double ltx)
